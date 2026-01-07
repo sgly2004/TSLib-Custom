@@ -279,6 +279,9 @@ def main():
     args.target = "OT"
     args.seasonal_patterns = "Yearly"
     args.augmentation_ratio = 0
+    # 设备相关补全：避免 AttributeError
+    args.use_multi_gpu = False
+    args.device_ids = [args.gpu]
 
     device = torch.device("cuda:0" if args.use_gpu and torch.cuda.is_available() else "cpu")
 
