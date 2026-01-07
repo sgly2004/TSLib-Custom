@@ -718,6 +718,168 @@ class SWATSegLoader(Dataset):
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
 
 
+class CustomAnomalySegLoader(Dataset):
+    """
+    自定义异常检测数据加载器，支持：
+    1. 记录 segment 边界，避免跨边界采样
+    2. 可配置的步长参数
+    
+    功能说明：
+    - 当数据是由多个 segment 拼接而成时（如多个300长度的样本拼接成一个大CSV），
+      普通的滑窗采样可能会产生跨边界的窗口，导致一个窗口包含两个不同样本的数据
+    - 本 Loader 会记录每个 segment 的边界，只在 segment 内部进行滑窗采样，避免跨边界问题
+    - 支持通过 step 参数控制采样步长，减少样本数量
+    """
+    def __init__(self, args, root_path, win_size, step=1, flag="train", segment_length=None):
+        self.flag = flag
+        self.step = step
+        self.win_size = win_size
+        self.scaler = StandardScaler()
+        
+        # 如果没有指定 segment_length，尝试从 dataset_info.txt 读取
+        if segment_length is None:
+            segment_length = self._get_segment_length(root_path)
+        self.segment_length = segment_length
+        
+        train_path = os.path.join(root_path, "train.csv")
+        test_path = os.path.join(root_path, "test.csv")
+        label_path = os.path.join(root_path, "test_label.csv")
+
+        if not all(os.path.exists(p) for p in [train_path, test_path, label_path]):
+            raise FileNotFoundError(f"Required files not found in {root_path}")
+
+        train_df = pd.read_csv(train_path)
+        test_df = pd.read_csv(test_path)
+        test_label_df = pd.read_csv(label_path)
+
+        # 归一化
+        data = train_df.values[:, 1:]
+        data = np.nan_to_num(data)
+        self.scaler.fit(data)
+        data = self.scaler.transform(data)
+        
+        test_data = test_df.values[:, 1:]
+        test_data = np.nan_to_num(test_data)
+        self.test = self.scaler.transform(test_data)
+        
+        self.train = data
+        data_len = len(self.train)
+        self.val = self.train[int(data_len * 0.8):]
+        self.test_labels = test_label_df.values[:, 1:]
+        
+        print(f"test: {self.test.shape}")
+        print(f"train: {self.train.shape}")
+        print(f"segment_length: {self.segment_length}, step: {self.step}, win_size: {self.win_size}")
+        
+        # 计算 segment 边界
+        self._compute_segment_boundaries()
+        
+        # 生成有效的窗口索引（不跨边界）
+        self._generate_valid_indices()
+        
+        print(f"Total valid windows: {len(self.valid_indices)}")
+        if self.flag == 'train':
+            total_without_boundary = (len(self.train) - self.win_size) // self.step + 1
+        elif self.flag == 'val':
+            total_without_boundary = (len(self.val) - self.win_size) // self.step + 1
+        else:  # test
+            total_without_boundary = (len(self.test) - self.win_size) // self.step + 1
+        print(f"  (Without boundary check: {total_without_boundary})")
+
+    def _get_segment_length(self, root_path):
+        """尝试从 dataset_info.txt 读取 segment length"""
+        info_path = os.path.join(root_path, "dataset_info.txt")
+        if os.path.exists(info_path):
+            with open(info_path, 'r') as f:
+                for line in f:
+                    if 'Sequence length' in line or 'seq_length' in line.lower():
+                        try:
+                            # 尝试提取数字
+                            match = re.search(r'(\d+)', line)
+                            if match:
+                                return int(match.group(1))
+                        except:
+                            pass
+        # 如果无法读取，返回 None，后续会从数据推断
+        return None
+
+    def _compute_segment_boundaries(self):
+        """计算每个 segment 的边界"""
+        if self.flag == "train":
+            data_length = len(self.train)
+        elif self.flag == "val":
+            data_length = len(self.val)
+        else:  # test
+            data_length = len(self.test)
+        
+        # 如果 segment_length 未指定，尝试从数据推断
+        if self.segment_length is None:
+            # 尝试推断：假设数据是多个相同长度的 segment 拼接
+            # 检查是否能被常见长度整除（100, 200, 300, 500, 1000等）
+            for candidate_length in [100, 200, 300, 500, 1000]:
+                if data_length % candidate_length == 0:
+                    self.segment_length = candidate_length
+                    print(f"Inferred segment_length: {self.segment_length}")
+                    break
+        
+        if self.segment_length is None:
+            # 如果无法推断，假设整个数据是一个 segment
+            self.segment_length = data_length
+            print(f"Warning: Cannot infer segment_length, using full data length: {self.segment_length}")
+        
+        # 计算边界
+        n_segments = data_length // self.segment_length
+        self.segment_boundaries = [
+            (i * self.segment_length, (i + 1) * self.segment_length)
+            for i in range(n_segments)
+        ]
+        
+        # 如果有剩余数据，也作为一个 segment
+        if data_length % self.segment_length != 0:
+            last_start = n_segments * self.segment_length
+            self.segment_boundaries.append((last_start, data_length))
+        
+        print(f"Computed {len(self.segment_boundaries)} segment boundaries")
+
+    def _generate_valid_indices(self):
+        """生成有效的窗口索引，避免跨边界"""
+        self.valid_indices = []
+        
+        for start, end in self.segment_boundaries:
+            # 在每个 segment 内进行滑窗
+            segment_indices = list(range(start, end - self.win_size + 1, self.step))
+            self.valid_indices.extend(segment_indices)
+        
+        # 确保索引是排序的（虽然应该已经是）
+        self.valid_indices = sorted(self.valid_indices)
+
+    def __len__(self):
+        return len(self.valid_indices)
+
+    def __getitem__(self, index):
+        actual_index = self.valid_indices[index]
+        
+        if self.flag == "train":
+            data = self.train[actual_index:actual_index + self.win_size]
+            labels = self.test_labels[0:self.win_size]  # 训练时标签不重要
+        elif self.flag == 'val':
+            data = self.val[actual_index:actual_index + self.win_size]
+            labels = self.test_labels[0:self.win_size]  # 验证时标签不重要
+        elif self.flag == 'test':
+            data = self.test[actual_index:actual_index + self.win_size]
+            labels = self.test_labels[actual_index:actual_index + self.win_size]
+        else:
+            # 兼容原有逻辑
+            data = self.test[actual_index:actual_index + self.win_size]
+            labels = self.test_labels[actual_index:actual_index + self.win_size]
+        
+        return np.float32(data), np.float32(labels)
+    
+    def inverse_transform(self, data):
+        """反归一化"""
+        return self.scaler.inverse_transform(data)
+
+
 class UEAloader(Dataset):
     """
     Dataset class for datasets included in:
