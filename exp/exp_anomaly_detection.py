@@ -147,12 +147,15 @@ class Exp_Anomaly_Detection(Exp_Basic):
                 # reconstruction
                 outputs = self.model(batch_x, None, None, None)
                 # criterion
+                # score 形状: (batch_size, win_size) - 每个时间步一个分数
                 score = torch.mean(self.anomaly_criterion(batch_x, outputs), dim=-1)
-                score = score.detach().cpu().numpy()
-                attens_energy.append(score)
+                # 对每个窗口的所有时间步求平均，得到窗口级别的分数
+                # score_window 形状: (batch_size,) - 每个窗口一个分数
+                score_window = torch.mean(score, dim=-1)
+                score_window = score_window.detach().cpu().numpy()
+                attens_energy.append(score_window)
 
-        attens_energy = np.concatenate(attens_energy, axis=0).reshape(-1)
-        train_energy = np.array(attens_energy)
+        train_energy = np.concatenate(attens_energy, axis=0)  # shape: (num_windows,)
 
         # (2) find the threshold
         attens_energy = []
@@ -162,13 +165,17 @@ class Exp_Anomaly_Detection(Exp_Basic):
             # reconstruction
             outputs = self.model(batch_x, None, None, None)
             # criterion
+            # score 形状: (batch_size, win_size) - 每个时间步一个分数
             score = torch.mean(self.anomaly_criterion(batch_x, outputs), dim=-1)
-            score = score.detach().cpu().numpy()
-            attens_energy.append(score)
+            # 对每个窗口的所有时间步求平均，得到窗口级别的分数
+            # score_window 形状: (batch_size,) - 每个窗口一个分数
+            score_window = torch.mean(score, dim=-1)
+            score_window = score_window.detach().cpu().numpy()
+            attens_energy.append(score_window)
             test_labels.append(batch_y)
 
         # 转为窗口级数组
-        test_energy = np.concatenate(attens_energy, axis=0).reshape(-1)
+        test_energy = np.concatenate(attens_energy, axis=0)  # shape: (num_windows,)
         combined_energy = np.concatenate([train_energy, test_energy], axis=0)
         threshold = np.percentile(combined_energy, 100 - self.args.anomaly_ratio)
         print("Threshold :", threshold)
@@ -182,7 +189,12 @@ class Exp_Anomaly_Detection(Exp_Basic):
             # 若缺少特征维度，则补一个维度
             labels_arr = labels_arr[:, :, None]
 
-        num_windows, win_size, _ = labels_arr.shape
+        num_windows, win_size, num_features = labels_arr.shape
+        
+        # 现在 pred_window 和 labels_arr 的第一维应该匹配了
+        assert len(pred_window) == num_windows, \
+            f"pred_window length ({len(pred_window)}) != labels_arr length ({num_windows})"
+        
         step = getattr(self.args, 'step', 1)
         total_len = (num_windows - 1) * step + win_size
 
@@ -190,7 +202,8 @@ class Exp_Anomaly_Detection(Exp_Basic):
         ts_pred = np.zeros(total_len, dtype=int)
         ts_gt = np.zeros(total_len, dtype=int)
 
-        for idx, w_pred in enumerate(pred_window):
+        for idx in range(num_windows):
+            w_pred = pred_window[idx]
             start = idx * step
             end = start + win_size
             label_vec = labels_arr[idx, :, 0].astype(int)  # 取首特征的标签（各特征一致）
