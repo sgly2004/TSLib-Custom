@@ -1,5 +1,5 @@
 from data_provider.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_M4, PSMSegLoader, \
-    MSLSegLoader, SMAPSegLoader, SMDSegLoader, SWATSegLoader, UEAloader
+    MSLSegLoader, SMAPSegLoader, SMDSegLoader, SWATSegLoader, UEAloader, CustomAnomalySegLoader
 from data_provider.uea import collate_fn
 from torch.utils.data import DataLoader
 
@@ -15,7 +15,9 @@ data_dict = {
     'SMAP': SMAPSegLoader,
     'SMD': SMDSegLoader,
     'SWAT': SWATSegLoader,
-    'UEA': UEAloader
+    'UEA': UEAloader,
+    # 自定义异常检测数据集，支持边界记录
+    'anomaly-detection-normal-300': CustomAnomalySegLoader,
 }
 
 
@@ -30,12 +32,31 @@ def data_provider(args, flag):
 
     if args.task_name == 'anomaly_detection':
         drop_last = False
-        data_set = Data(
-            args = args,
-            root_path=args.root_path,
-            win_size=args.seq_len,
-            flag=flag,
-        )
+        # 获取 step 参数，如果 args 中有则使用，否则使用默认值
+        # 这样可以控制滑窗采样的步长，减少样本数量
+        step = getattr(args, 'step', 1)  # 默认值为 1
+        
+        # 如果是自定义 Loader（支持边界记录），传递 segment_length 参数
+        # segment_length 用于标识每个 segment 的长度，避免跨边界采样
+        if args.data in ['anomaly-detection-normal-300']:
+            segment_length = getattr(args, 'segment_length', 300)  # 默认 300，可从 dataset_info.txt 读取
+            data_set = Data(
+                args=args,
+                root_path=args.root_path,
+                win_size=args.seq_len,
+                step=step,  # 传递 step 参数，控制滑窗采样步长
+                flag=flag,
+                segment_length=segment_length,  # 传递 segment_length，用于边界记录
+            )
+        else:
+            # 原有的 Loader（PSM, MSL, SMAP, SMD, SWAT）
+            data_set = Data(
+                args=args,
+                root_path=args.root_path,
+                win_size=args.seq_len,
+                step=step,  # 传递 step 参数，控制滑窗采样步长
+                flag=flag,
+            )
         print(flag, len(data_set))
         data_loader = DataLoader(
             data_set,
