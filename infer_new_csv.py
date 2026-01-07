@@ -263,6 +263,8 @@ def main():
     args.e_layers = 2
     args.d_layers = 1
     args.top_k = 3
+    # TimesNet 额外必需参数
+    args.num_kernels = 6  # TimesNet 卷积核数，训练时默认值
     args.anomaly_ratio = args_cli.anomaly_ratio  # 这里仅用于阈值的百分位
 
     # 其他 Exp_Anomaly_Detection 里需要但此处无关紧要的字段，给个合理默认值即可
