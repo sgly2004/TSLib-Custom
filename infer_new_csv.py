@@ -263,6 +263,7 @@ def main():
     args.e_layers = 2
     args.d_layers = 1
     args.top_k = 3
+    args.dropout = 0.1  # TimesNet 默认 dropout
     # TimesNet 额外必需参数
     args.num_kernels = 6  # TimesNet 卷积核数，训练时默认值
     args.anomaly_ratio = args_cli.anomaly_ratio  # 这里仅用于阈值的百分位
