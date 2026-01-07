@@ -167,28 +167,51 @@ class Exp_Anomaly_Detection(Exp_Basic):
             attens_energy.append(score)
             test_labels.append(batch_y)
 
-        attens_energy = np.concatenate(attens_energy, axis=0).reshape(-1)
-        test_energy = np.array(attens_energy)
+        # 转为窗口级数组
+        test_energy = np.concatenate(attens_energy, axis=0).reshape(-1)
         combined_energy = np.concatenate([train_energy, test_energy], axis=0)
         threshold = np.percentile(combined_energy, 100 - self.args.anomaly_ratio)
         print("Threshold :", threshold)
 
-        # (3) evaluation on the test set
-        pred = (test_energy > threshold).astype(int)
-        test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
-        test_labels = np.array(test_labels)
-        gt = test_labels.astype(int)
+        # (3) evaluation on the test set（窗口级别预测）
+        pred_window = (test_energy > threshold).astype(int)  # shape: (num_windows,)
 
-        print("pred:   ", pred.shape)
-        print("gt:     ", gt.shape)
+        # 将标签堆叠为 (num_windows, win_size, feat_dim)
+        labels_arr = np.concatenate(test_labels, axis=0)
+        if labels_arr.ndim == 2:
+            # 若缺少特征维度，则补一个维度
+            labels_arr = labels_arr[:, :, None]
 
-        # (4) detection adjustment
-        gt, pred = adjustment(gt, pred)
+        num_windows, win_size, _ = labels_arr.shape
+        step = getattr(self.args, 'step', 1)
+        total_len = (num_windows - 1) * step + win_size
+
+        # 窗口级 -> 时间步级 投票映射
+        ts_pred = np.zeros(total_len, dtype=int)
+        ts_gt = np.zeros(total_len, dtype=int)
+
+        for idx, w_pred in enumerate(pred_window):
+            start = idx * step
+            end = start + win_size
+            label_vec = labels_arr[idx, :, 0].astype(int)  # 取首特征的标签（各特征一致）
+
+            # gt：同位置取最大值，兼容重叠窗口
+            ts_gt[start:end] = np.maximum(ts_gt[start:end], label_vec)
+
+            # pred：若窗口判为异常，则该窗口覆盖的时间步置为异常
+            if w_pred == 1:
+                ts_pred[start:end] = 1
+
+        print("pred_window:", pred_window.shape, "-> ts_pred:", ts_pred.shape)
+        print("gt (from labels):", ts_gt.shape)
+
+        # (4) detection adjustment（时间步级别）
+        gt, pred = adjustment(ts_gt.copy(), ts_pred.copy())
 
         pred = np.array(pred)
         gt = np.array(gt)
-        print("pred: ", pred.shape)
-        print("gt:   ", gt.shape)
+        print("pred (adjusted):", pred.shape)
+        print("gt   (adjusted):", gt.shape)
 
         accuracy = accuracy_score(gt, pred)
         precision, recall, f_score, support = precision_recall_fscore_support(gt, pred, average='binary')
