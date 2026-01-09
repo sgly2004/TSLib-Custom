@@ -64,11 +64,19 @@ def main():
             "--enc_in", "1",
             "--c_out", "1",
             "--seq_len", "256",
+            "--pred_len", "0",
             "--anomaly_ratio", "1",
-            "--batch_size", "32",
+            "--batch_size", "8",
+            "--d_model", "256",
+            "--d_ff", "1024",
+            "--e_layers", "1",
+            "--top_k", "3",
+            "--num_kernels", "4",
+            "--patience", "3",
             "--train_epochs", "10",
             "--checkpoints", "./checkpoints/gas_timesnet",
-            "--des", "gas_univariate",
+            "--des", "gas_univariate_small",
+            "--use_amp",
         ]
 
         print("=" * 80)

@@ -28,12 +28,12 @@ python scripts/gas/build_gas_anomaly_dataset.py
 
 ### 2.1 服务器上切换到新分支并拉取代码
 
-在服务器上（首次使用该仓库时先 clone，此处省略），进入项目目录：
+在服务器上（首次使用该仓库时先 clone，此处省略），进入项目目录，并从远端创建本地分支：
 
 ```bash
 cd /data/TSLib-Custom
-git checkout test-gas-anomaly-detection
-git pull origin test-gas-anomaly-detection
+git fetch origin
+git checkout -b test-gas-anomaly-detection origin/test-gas-anomaly-detection
 ```
 
 （具体用 `scp/rsync` 或公司内部工具，这里不赘述。）
@@ -55,11 +55,19 @@ python run.py \
   --features M \
   --enc_in 32 --c_out 32 \
   --seq_len 256 \
+  --pred_len 0 \
   --anomaly_ratio 1 \
-  --batch_size 32 \
+  --batch_size 8 \
+  --d_model 256 \
+  --d_ff 1024 \
+  --e_layers 1 \
+  --top_k 3 \
+  --num_kernels 4 \
+  --patience 3 \
   --train_epochs 10 \
   --checkpoints ./checkpoints/gas_timesnet \
-  --des gas_32d
+  --des gas_32d_small \
+  --use_amp
 ```
 
 输出：
