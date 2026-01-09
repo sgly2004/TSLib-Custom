@@ -410,7 +410,7 @@ class Dataset_M4(Dataset):
 
 
 class PSMSegLoader(Dataset):
-    def __init__(self, args, root_path, win_size, step=1, flag="train"):
+    def __init__(self, args, root_path, win_size, step=4, flag="train"):
         self.flag = flag
         self.step = step
         self.win_size = win_size

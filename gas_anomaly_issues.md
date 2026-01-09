@@ -101,7 +101,7 @@
 
 **最终采用的稳定配置示例：**
 
-文档 `gas_anomaly_pipeline.md` 中的推荐命令已改为：
+文档 `gas_anomaly_pipeline.md` 中的推荐命令最初调整为（更保守的显存配置）：
 
 ```bash
 python run.py \
@@ -129,5 +129,24 @@ python run.py \
 ```
 
 这套参数在 24GB 显存的 GPU 上，结合当前数据规模，训练 TimesNet 异常检测能显著降低 OOM 风险。
+
+**后续为加速训练的调优：**
+
+- 在确认显存余量足够的前提下，将多变量方案的 `batch_size` 提升到 `64`，进一步提升吞吐量；
+- 同时在 `GasSegLoader` 中将滑动窗口步长 `step` 的默认值从 `1` 调整为 `4`：
+
+  ```python
+  class GasSegLoader(Dataset):
+      def __init__(self, args, root_path, win_size, step=4, flag="train"):
+          ...
+  ```
+
+- 理论上：
+  - `step` 从 `1` 改为 `4`，窗口数量约为原来的 `1/4`，单个 epoch 的 batch 数和耗时也大约降到 `1/4`；
+  - 在显存允许的条件下，将 `batch_size` 从 `8` 提升到 `64`，可以进一步减少每个 epoch 的 batch 数，加快训练。
+- 代价是：
+  - 训练看到的窗口更稀疏（重叠减少），时间覆盖仍然完整但细粒度程度降低；
+  - `batch_size` 增大需要注意显存占用情况，必要时可在 OOM 时退回较小的 batch 或增大步长。
+
 
 
