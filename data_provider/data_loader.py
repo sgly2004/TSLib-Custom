@@ -471,6 +471,96 @@ class PSMSegLoader(Dataset):
                 self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
 
 
+class GasSegLoader(Dataset):
+    """
+    异常检测用的天然气数据集：
+    - root_path/train.csv 由正常片段拼接而成
+    - root_path/test.csv  为完整运行样本
+    仅使用训练集拟合 StandardScaler，对所有 split 进行缩放。
+    """
+
+    def __init__(self, args, root_path, win_size, step=1, flag="train"):
+        self.args = args
+        self.flag = flag
+        self.step = step
+        self.win_size = win_size
+        self.scaler = StandardScaler()
+
+        train_path = os.path.join(root_path, "train.csv")
+        test_path = os.path.join(root_path, "test.csv")
+
+        if not os.path.exists(train_path) or not os.path.exists(test_path):
+            raise FileNotFoundError(
+                f"GasSegLoader expects train.csv and test.csv under {root_path}, "
+                f"got train_exists={os.path.exists(train_path)}, test_exists={os.path.exists(test_path)}"
+            )
+
+        train_df = pd.read_csv(train_path)
+        test_df = pd.read_csv(test_path)
+
+        # 假定第一列为 date，其余为数值特征
+        train_data = train_df.values[:, 1:]
+        test_data = test_df.values[:, 1:]
+
+        train_data = np.nan_to_num(train_data)
+        test_data = np.nan_to_num(test_data)
+
+        # 仅在训练集上拟合 scaler
+        self.scaler.fit(train_data)
+        train_data = self.scaler.transform(train_data)
+        test_data = self.scaler.transform(test_data)
+
+        # 多变量 / 单变量选择
+        if args.features == 'S':
+            # 单变量：根据 target 列名选择一列
+            target_col = getattr(args, "target", None)
+            if target_col is None or target_col not in list(train_df.columns):
+                raise ValueError(
+                    f"GasSegLoader single-var mode requires args.target to be one of {list(train_df.columns)}, "
+                    f"got {target_col}"
+                )
+            col_idx = list(train_df.columns).index(target_col) - 1  # 去掉 date 后的索引
+            train_data = train_data[:, [col_idx]]
+            test_data = test_data[:, [col_idx]]
+
+        self.train = train_data
+        self.test = test_data
+
+        data_len = len(self.train)
+        self.val = self.train[int(data_len * 0.8):]
+
+        # 目前无真实标签，构造全 0 的占位标签，保证与其它 SegLoader 接口一致
+        total_len = len(self.test)
+        self.test_labels = np.zeros((total_len, 1), dtype=np.float32)
+
+        print("GAS test:", self.test.shape)
+        print("GAS train:", self.train.shape)
+
+    def __len__(self):
+        if self.flag == "train":
+            return (self.train.shape[0] - self.win_size) // self.step + 1
+        elif self.flag == 'val':
+            return (self.val.shape[0] - self.win_size) // self.step + 1
+        elif self.flag == 'test':
+            return (self.test.shape[0] - self.win_size) // self.step + 1
+        else:
+            return (self.test.shape[0] - self.win_size) // self.win_size + 1
+
+    def __getitem__(self, index):
+        index = index * self.step
+        if self.flag == "train":
+            return np.float32(self.train[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+        elif self.flag == 'val':
+            return np.float32(self.val[index:index + self.win_size]), np.float32(self.test_labels[0:self.win_size])
+        elif self.flag == 'test':
+            return np.float32(self.test[index:index + self.win_size]), np.float32(
+                self.test_labels[index:index + self.win_size])
+        else:
+            return np.float32(self.test[
+                              index // self.step * self.win_size:index // self.step * self.win_size + self.win_size]), np.float32(
+                self.test_labels[index // self.step * self.win_size:index // self.step * self.win_size + self.win_size])
+
+
 class MSLSegLoader(Dataset):
     def __init__(self, args, root_path, win_size, step=1, flag="train"):
         self.flag = flag

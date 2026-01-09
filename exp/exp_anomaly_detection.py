@@ -173,35 +173,53 @@ class Exp_Anomaly_Detection(Exp_Basic):
         threshold = np.percentile(combined_energy, 100 - self.args.anomaly_ratio)
         print("Threshold :", threshold)
 
-        # (3) evaluation on the test set
+        # (3) prediction based on threshold
         pred = (test_energy > threshold).astype(int)
+
+        # 保存基础能量与预测结果，方便后续可视化/融合处理
+        np.savez(
+            os.path.join(folder_path, 'energy_and_pred.npz'),
+            train_energy=train_energy,
+            test_energy=test_energy,
+            threshold=threshold,
+            pred=pred,
+            seq_len=self.args.seq_len,
+        )
+
+        # (4) evaluation on the test set (only if meaningful labels are available)
         test_labels = np.concatenate(test_labels, axis=0).reshape(-1)
         test_labels = np.array(test_labels)
-        gt = test_labels.astype(int)
+        unique_labels = np.unique(test_labels)
 
-        print("pred:   ", pred.shape)
-        print("gt:     ", gt.shape)
+        if unique_labels.size > 1:
+            gt = test_labels.astype(int)
 
-        # (4) detection adjustment
-        gt, pred = adjustment(gt, pred)
+            print("pred:   ", pred.shape)
+            print("gt:     ", gt.shape)
 
-        pred = np.array(pred)
-        gt = np.array(gt)
-        print("pred: ", pred.shape)
-        print("gt:   ", gt.shape)
+            # detection adjustment
+            gt, pred_adj = adjustment(gt, pred)
 
-        accuracy = accuracy_score(gt, pred)
-        precision, recall, f_score, support = precision_recall_fscore_support(gt, pred, average='binary')
-        print("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
-            accuracy, precision,
-            recall, f_score))
+            pred_adj = np.array(pred_adj)
+            gt = np.array(gt)
+            print("pred (adjusted): ", pred_adj.shape)
+            print("gt (adjusted):   ", gt.shape)
 
-        f = open("result_anomaly_detection.txt", 'a')
-        f.write(setting + "  \n")
-        f.write("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
-            accuracy, precision,
-            recall, f_score))
-        f.write('\n')
-        f.write('\n')
-        f.close()
+            accuracy = accuracy_score(gt, pred_adj)
+            precision, recall, f_score, support = precision_recall_fscore_support(gt, pred_adj, average='binary')
+            print("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
+                accuracy, precision,
+                recall, f_score))
+
+            with open("result_anomaly_detection.txt", 'a') as f:
+                f.write(setting + "  \n")
+                f.write("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
+                    accuracy, precision,
+                    recall, f_score))
+                f.write('\n')
+                f.write('\n')
+        else:
+            print("Test labels are constant (no ground truth). Skipping metric computation; "
+                  "saved energy and predictions for further analysis.")
+
         return
