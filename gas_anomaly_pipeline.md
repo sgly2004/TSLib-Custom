@@ -57,7 +57,7 @@ python run.py \
   --seq_len 256 \
   --pred_len 0 \
   --anomaly_ratio 1 \
-  --batch_size 64 \
+  --batch_size 8 \
   --d_model 256 \
   --d_ff 1024 \
   --e_layers 1 \

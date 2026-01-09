@@ -479,7 +479,7 @@ class GasSegLoader(Dataset):
     仅使用训练集拟合 StandardScaler，对所有 split 进行缩放。
     """
 
-    def __init__(self, args, root_path, win_size, step=1, flag="train"):
+    def __init__(self, args, root_path, win_size, step=8, flag="train"):
         self.args = args
         self.flag = flag
         self.step = step
