@@ -75,7 +75,7 @@ def visualize_single_file(result_file, raw_csv, target_col='CHX00L006PT0101',
     # 子图1：流量背景
     flow_cols = [c for c in df_clean.columns if 'FT' in c]
     for fc in flow_cols:
-        axes[0].plot(df_clean['date'], df_clean[fc], alpha=0.2, linewidth=0.8)
+        axes[0].plot(df_clean['date'], df_clean[fc], alpha=0.6, linewidth=1.2)
     axes[0].set_ylabel('Flow Rate')
     axes[0].set_title(f'Flow Fields Context - {file_name}')
     
