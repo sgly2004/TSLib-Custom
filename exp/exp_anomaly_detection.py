@@ -129,8 +129,8 @@ class Exp_Anomaly_Detection(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         train_data, train_loader = self._get_data(flag='train')
         if test:
-            print('loading model')
-            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+        print('loading model')
+        self.model.load_state_dict(torch.load(os.path.join(self.args.checkpoints, setting, 'checkpoint.pth')))
 
         attens_energy = []
         folder_path = './test_results/' + setting + '/'
@@ -169,9 +169,11 @@ class Exp_Anomaly_Detection(Exp_Basic):
 
         attens_energy = np.concatenate(attens_energy, axis=0).reshape(-1)
         test_energy = np.array(attens_energy)
-        combined_energy = np.concatenate([train_energy, test_energy], axis=0)
-        threshold = np.percentile(combined_energy, 100 - self.args.anomaly_ratio)
-        print("Threshold :", threshold)
+        
+        # 改进：仅使用训练集的误差分布来确定阈值
+        # 这样只要测试集的重构误差超过了训练集（正常数据）的 99% 分位数，就会被判定为异常
+        threshold = np.percentile(train_energy, 100 - self.args.anomaly_ratio)
+        print(f"Threshold (based on train_energy): {threshold:.6f}")
 
         # (3) prediction based on threshold
         pred = (test_energy > threshold).astype(int)
