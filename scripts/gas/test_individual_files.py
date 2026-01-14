@@ -135,7 +135,7 @@ def main():
     
     # 2. 加载训练好的模型
     model_id = 'gas_single_CHX00L006PT0101'
-    setting = f"anomaly_detection_{model_id}_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc1_ebtimeF_dtTrue_CHX00L006PT0101_pressure"
+    setting = f"anomaly_detection_{model_id}_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc1_ebtimeF_dtTrue_CHX00L006PT0101_pressure_0"
     checkpoint_path = os.path.join(config.checkpoints, setting, 'checkpoint.pth')
     
     if not os.path.exists(checkpoint_path):
