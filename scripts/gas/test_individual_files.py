@@ -122,6 +122,11 @@ def main():
         'gpu': 0,
         'use_multi_gpu': False,
         'devices': '0',
+        # DataLoader 必需参数
+        'num_workers': 0,
+        'lradj': 'type1',
+        'label_len': 48,
+        'data_path': 'test.csv',
     })
     
     # 1. 加载训练集的 scaler
