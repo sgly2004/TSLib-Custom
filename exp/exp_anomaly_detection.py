@@ -129,8 +129,8 @@ class Exp_Anomaly_Detection(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
         train_data, train_loader = self._get_data(flag='train')
         if test:
-        print('loading model')
-        self.model.load_state_dict(torch.load(os.path.join(self.args.checkpoints, setting, 'checkpoint.pth')))
+            print('loading model')
+            self.model.load_state_dict(torch.load(os.path.join(self.args.checkpoints, setting, 'checkpoint.pth')))
 
         attens_energy = []
         folder_path = './test_results/' + setting + '/'
