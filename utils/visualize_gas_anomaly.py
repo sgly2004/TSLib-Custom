@@ -245,9 +245,17 @@ def visualize_all_tags(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize gas anomaly detection results for all tags.")
+    parser = argparse.ArgumentParser(description="Visualize gas anomaly detection results.")
     parser.add_argument("--result_file", type=str, required=True,
                         help="Path to npz file (energy_and_pred.npz or global_fusion.npz).")
+    parser.add_argument("--raw_csv", type=str, default=None,
+                        help="Path to a specific raw CSV file to visualize. If not provided, visualizes all in data/csv_data.")
+    parser.add_argument("--pressure_tag", type=str, default=None,
+                        help="Specific pressure tag to highlight (optional).")
+    parser.add_argument("--flow_tag", type=str, default=None,
+                        help="Specific flow tag to highlight (optional).")
+    parser.add_argument("--seq_len", type=int, default=None,
+                        help="Override sequence length (optional).")
     args = parser.parse_args()
 
     # Infer save directory from result_file path
@@ -260,16 +268,24 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
     print(f"Output directory: {save_dir}")
 
-    # Automatically read seq_len from result_file
-    seq_len = _get_seq_len_from_result(args.result_file)
-    print(f"Using seq_len={seq_len} from result file")
+    # Automatically read seq_len from result_file if not provided
+    seq_len = args.seq_len
+    if seq_len is None:
+        seq_len = _get_seq_len_from_result(args.result_file)
+        print(f"Using seq_len={seq_len} from result file")
+    else:
+        print(f"Using manual seq_len={seq_len}")
 
-    # Find all CSV files (hardcoded to ./data/csv_data)
-    csv_data_dir = os.path.join(project_root, "data", "csv_data")
-    csv_files = sorted(glob.glob(os.path.join(csv_data_dir, "*.csv")))
+    if args.raw_csv:
+        # Visualize specific CSV
+        csv_files = [args.raw_csv]
+    else:
+        # Find all CSV files (hardcoded to ./data/csv_data)
+        csv_data_dir = os.path.join(project_root, "data", "csv_data")
+        csv_files = sorted(glob.glob(os.path.join(csv_data_dir, "*.csv")))
     
     if not csv_files:
-        print(f"[ERROR] No CSV files found in {csv_data_dir}")
+        print(f"[ERROR] No CSV files found.")
         return
 
     print(f"Found {len(csv_files)} CSV files to visualize")
