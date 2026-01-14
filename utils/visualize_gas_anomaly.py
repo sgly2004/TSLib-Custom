@@ -1,5 +1,6 @@
 import os
 import argparse
+import glob
 
 import numpy as np
 import pandas as pd
@@ -44,11 +45,11 @@ FIELD_MAPPING = {
 
 def _load_pred_vector(result_file: str, seq_len: int | None = None) -> np.ndarray:
     """
-    从 energy_and_pred.npz 或 global_fusion.npz 中读取一维 0/1 序列。
-    目前：
-    - 多变量 / 单变量原始模型：使用 energy_and_pred.npz 中的 pred（一维，对窗口进行预测）
-    - 单变量 OR 融合：使用 global_fusion.npz 中的 global_pred
-    为了简化，对齐策略采用“窗口最后一个点”，并在可视化时将窗口预测展开到对应的时间点。
+    Load 1D 0/1 sequence from energy_and_pred.npz or global_fusion.npz.
+    Currently:
+    - Multivariate / univariate original models: use pred from energy_and_pred.npz (1D, window-level prediction)
+    - Univariate OR fusion: use global_pred from global_fusion.npz
+    For simplicity, alignment strategy uses "last point of window" and expands window predictions to time points during visualization.
     """
     data = np.load(result_file)
     if "global_pred" in data:
@@ -60,22 +61,30 @@ def _load_pred_vector(result_file: str, seq_len: int | None = None) -> np.ndarra
 
     pred = pred.reshape(-1)
     if seq_len is not None and "seq_len" in data:
-        # 当前实现中 seq_len 主要用于后续扩展，这里暂不做进一步重采样
+        # seq_len is mainly for future extension, no further resampling here
         pass
     return pred
 
 
+def _get_seq_len_from_result(result_file: str) -> int:
+    """Read seq_len from result file, return default 256 if not exists"""
+    data = np.load(result_file)
+    if "seq_len" in data:
+        return int(data["seq_len"])
+    return 256
+
+
 def _expand_window_pred_to_points(pred_win: np.ndarray, total_len: int, win_size: int) -> np.ndarray:
     """
-    将按滑动窗口得到的预测（一维，长度为 N_win）展开为按时间点的预测（长度为 total_len）。
-    简单规则：
-    - 假定窗口步长为 1
-    - 对每个窗口，预测标签作用于窗口的最后一个时间点
-    - 对前 win_size-1 个点，用第一个窗口的标签填充
+    Expand window-based predictions (1D, length N_win) to point-based predictions (length total_len).
+    Simple rules:
+    - Assume window stride is 1
+    - For each window, prediction label applies to the last time point of the window
+    - For the first win_size-1 points, use the label from the first window
     """
     n_win = pred_win.shape[0]
     if total_len != n_win + win_size - 1:
-        # 回退：长度不匹配时简单重复/截断到 total_len
+        # Fallback: simple repeat/crop to total_len when length mismatch
         print(f"[WARN] total_len {total_len} != n_win+win_size-1 ({n_win + win_size - 1}), "
               f"fallback to simple repeat/crop.")
         tiled = np.repeat(pred_win, max(1, win_size))
@@ -83,10 +92,10 @@ def _expand_window_pred_to_points(pred_win: np.ndarray, total_len: int, win_size
 
     point_pred = np.zeros((total_len,), dtype=int)
 
-    # 前 win_size-1 个点使用第一个窗口标签
+    # First win_size-1 points use label from first window
     point_pred[: win_size - 1] = pred_win[0]
 
-    # 从第 win_size-1 个点开始，每个点对应一个窗口的最后位置
+    # From win_size-1 point onwards, each point corresponds to the last position of a window
     for i in range(n_win):
         t = i + win_size - 1
         if t < total_len:
@@ -95,21 +104,65 @@ def _expand_window_pred_to_points(pred_win: np.ndarray, total_len: int, win_size
     return point_pred
 
 
-def visualize(
+def _check_anomaly_status(point_pred: np.ndarray) -> tuple[str, bool]:
+    """
+    Check anomaly status: no anomaly, all anomaly, or normal (partial anomaly)
+    Returns (status_text, is_special_case)
+    """
+    total = len(point_pred)
+    anomaly_count = np.sum(point_pred == 1)
+    
+    if anomaly_count == 0:
+        return "No Anomaly", True
+    elif anomaly_count == total:
+        return "All Anomaly", True
+    else:
+        return f"Anomaly: {anomaly_count}/{total} ({anomaly_count/total*100:.1f}%)", False
+
+
+def _draw_anomaly_regions(ax, time_index: pd.Series, point_pred: np.ndarray):
+    """Draw normal regions (green) and anomaly regions (red) on subplot"""
+    if len(point_pred) == 0:
+        return
+    
+    # Find all continuous segments
+    current_state = point_pred[0]
+    start_idx = 0
+    
+    for i in range(1, len(point_pred)):
+        if point_pred[i] != current_state:
+            # Segment ended, draw it
+            start_t = time_index.iloc[start_idx]
+            end_t = time_index.iloc[i]
+            color = "red" if current_state == 1 else "green"
+            ax.axvspan(start_t, end_t, color=color, alpha=0.15)
+            
+            # Start new segment
+            current_state = point_pred[i]
+            start_idx = i
+    
+    # Draw the last segment
+    start_t = time_index.iloc[start_idx]
+    end_t = time_index.iloc[-1]
+    color = "red" if current_state == 1 else "green"
+    ax.axvspan(start_t, end_t, color=color, alpha=0.15)
+
+
+def visualize_all_tags(
     raw_csv: str,
     result_file: str,
-    flow_tag: str = "CHX00L006FT0101",
-    pressure_tag: str = "CHX00L006PT0101",
     seq_len: int = 256,
     save_dir: str = "./vis_results/gas",
-    title: str | None = None,
 ):
+    """
+    Visualize all tags from a CSV file in 2 subplots: flow and pressure.
+    """
     df = pd.read_csv(raw_csv)
     if df.shape[1] < 2:
         raise ValueError(f"raw_csv {raw_csv} has too few columns.")
 
     cols = list(df.columns)
-    # 与构建脚本保持一致：第一列为日期
+    # First column is date
     cols[0] = "date"
     df.columns = cols
 
@@ -118,93 +171,125 @@ def visualize(
     df = df.sort_values("date")
     df = df.reset_index(drop=True)
 
-    if flow_tag not in df.columns or pressure_tag not in df.columns:
-        raise ValueError(f"flow_tag or pressure_tag not in columns, got {flow_tag}, {pressure_tag}")
+    # Get all tag columns (exclude date column)
+    tag_columns = [col for col in df.columns if col != "date"]
+    if len(tag_columns) != 32:
+        print(f"[WARN] Expected 32 tags, got {len(tag_columns)} in {raw_csv}")
 
     time_index = df["date"]
-    flow = df[flow_tag].values
-    pressure = df[pressure_tag].values
 
+    # Load prediction results
     pred_win = _load_pred_vector(result_file, seq_len=seq_len)
     total_len = len(df)
     point_pred = _expand_window_pred_to_points(pred_win, total_len, win_size=seq_len)
 
-    os.makedirs(save_dir, exist_ok=True)
+    # Check anomaly status
+    status_text, is_special_case = _check_anomaly_status(point_pred)
 
-    plt.figure(figsize=(15, 6))
-    ax1 = plt.subplot(2, 1, 1)
-    ax2 = plt.subplot(2, 1, 2, sharex=ax1)
+    # Separate flow and pressure fields
+    flow_fields = [f for f in tag_columns if 'FT' in f]
+    pressure_fields = [f for f in tag_columns if 'PT' in f]
 
-    # 绘制流量与压力
-    ax1.plot(time_index, flow, color="tab:blue", linewidth=1.0, label="Flow")
-    ax2.plot(time_index, pressure, color="tab:orange", linewidth=1.0, label="Pressure")
+    # Create 2 subplots: flow and pressure
+    fig, axes = plt.subplots(2, 1, figsize=(15, 12))
 
-    # 区间着色：根据 point_pred 中的连续段
-    in_anom = False
-    start_t = None
-    for i, flag in enumerate(point_pred):
-        if not in_anom and flag == 1:
-            in_anom = True
-            start_t = time_index.iloc[i]
-        elif in_anom and flag == 0:
-            end_t = time_index.iloc[i]
-            ax1.axvspan(start_t, end_t, color="red", alpha=0.15)
-            ax2.axvspan(start_t, end_t, color="red", alpha=0.15)
-            in_anom = False
-            start_t = None
-    # 尾段
-    if in_anom and start_t is not None:
-        end_t = time_index.iloc[-1]
-        ax1.axvspan(start_t, end_t, color="red", alpha=0.15)
-        ax2.axvspan(start_t, end_t, color="red", alpha=0.15)
+    # Plot flow fields
+    if flow_fields:
+        for field in flow_fields:
+            axes[0].plot(time_index, df[field], label=field, linewidth=1.5, alpha=0.8)
+        axes[0].set_ylabel('Flow (m³/h)', fontsize=12)
+        axes[0].set_title('Flow Fields', fontsize=14, fontweight='bold')
+        axes[0].legend(loc='best', fontsize=9, ncol=2)
+        axes[0].grid(True, alpha=0.3)
+        # Draw normal (green) and anomaly (red) regions
+        _draw_anomaly_regions(axes[0], time_index, point_pred)
+        # Add status text if special case
+        if is_special_case:
+            axes[0].text(0.5, 0.95, status_text, transform=axes[0].transAxes,
+                       fontsize=14, fontweight='bold', color='red',
+                       ha='center', va='top',
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
 
-    # 轴标签与图例
-    ax1.set_ylabel(FIELD_MAPPING.get(flow_tag, flow_tag))
-    ax2.set_ylabel(FIELD_MAPPING.get(pressure_tag, pressure_tag))
-    ax2.set_xlabel("Time")
+    # Plot pressure fields
+    if pressure_fields:
+        for field in pressure_fields:
+            axes[1].plot(time_index, df[field], label=field, linewidth=1, alpha=0.7)
+        axes[1].set_ylabel('Pressure (MPa)', fontsize=12)
+        axes[1].set_xlabel('Time', fontsize=12)
+        axes[1].set_title('Pressure Fields', fontsize=14, fontweight='bold')
+        axes[1].legend(loc='best', fontsize=8, ncol=3)
+        axes[1].grid(True, alpha=0.3)
+        # Draw normal (green) and anomaly (red) regions
+        _draw_anomaly_regions(axes[1], time_index, point_pred)
+        # Add status text if special case
+        if is_special_case:
+            axes[1].text(0.5, 0.95, status_text, transform=axes[1].transAxes,
+                       fontsize=14, fontweight='bold', color='red',
+                       ha='center', va='top',
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
 
-    ax1.legend(loc="upper right")
-    ax2.legend(loc="upper right")
+    # Set overall title
+    csv_base = os.path.splitext(os.path.basename(raw_csv))[0]
+    result_dir = os.path.basename(os.path.dirname(result_file))
+    title = f"Gas Anomaly Visualization - {csv_base}\nResult: {result_dir}\n{status_text}"
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
 
-    if title is None:
-        base = os.path.basename(raw_csv)
-        title = f"Gas anomaly visualization - {base}"
-    ax1.set_title(title)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
 
-    plt.tight_layout()
-
+    # Save image
     out_name = os.path.splitext(os.path.basename(raw_csv))[0]
-    result_base = os.path.splitext(os.path.basename(result_file))[0]
-    out_path = os.path.join(
-        save_dir,
-        f"{out_name}_{result_base}_flow-{flow_tag}_pressure-{pressure_tag}.png",
-    )
-    plt.savefig(out_path, dpi=150)
-    print(f"Saved visualization to {out_path}")
+    out_path = os.path.join(save_dir, f"{out_name}_all_tags.png")
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Saved visualization to {out_path} ({status_text})")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Visualize gas anomaly detection results.")
-    parser.add_argument("--raw_csv", type=str, required=True, help="Path to raw csv file.")
+    parser = argparse.ArgumentParser(description="Visualize gas anomaly detection results for all tags.")
     parser.add_argument("--result_file", type=str, required=True,
                         help="Path to npz file (energy_and_pred.npz or global_fusion.npz).")
-    parser.add_argument("--flow_tag", type=str, default="CHX00L006FT0101", help="Column name for flow.")
-    parser.add_argument("--pressure_tag", type=str, default="CHX00L006PT0101", help="Column name for pressure.")
-    parser.add_argument("--seq_len", type=int, default=256, help="Seq_len used during model training.")
-    parser.add_argument("--save_dir", type=str, default="./vis_results/gas", help="Output directory.")
     args = parser.parse_args()
 
-    visualize(
-        raw_csv=args.raw_csv,
-        result_file=args.result_file,
-        flow_tag=args.flow_tag,
-        pressure_tag=args.pressure_tag,
-        seq_len=args.seq_len,
-        save_dir=args.save_dir,
-    )
+    # Infer save directory from result_file path
+    result_file_abs = os.path.abspath(args.result_file)
+    result_dir_name = os.path.basename(os.path.dirname(result_file_abs))
+    
+    # Create corresponding folder under vis_results
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    save_dir = os.path.join(project_root, "vis_results", result_dir_name)
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Output directory: {save_dir}")
+
+    # Automatically read seq_len from result_file
+    seq_len = _get_seq_len_from_result(args.result_file)
+    print(f"Using seq_len={seq_len} from result file")
+
+    # Find all CSV files (hardcoded to ./data/csv_data)
+    csv_data_dir = os.path.join(project_root, "data", "csv_data")
+    csv_files = sorted(glob.glob(os.path.join(csv_data_dir, "*.csv")))
+    
+    if not csv_files:
+        print(f"[ERROR] No CSV files found in {csv_data_dir}")
+        return
+
+    print(f"Found {len(csv_files)} CSV files to visualize")
+
+    # Generate visualization for each CSV file
+    for csv_file in csv_files:
+        try:
+            visualize_all_tags(
+                raw_csv=csv_file,
+                result_file=args.result_file,
+                seq_len=seq_len,
+                save_dir=save_dir,
+            )
+        except Exception as e:
+            print(f"[ERROR] Failed to visualize {csv_file}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print(f"\nVisualization complete! All results saved to: {save_dir}")
 
 
 if __name__ == "__main__":
     main()
-
-

@@ -192,32 +192,32 @@ class Exp_Anomaly_Detection(Exp_Basic):
         unique_labels = np.unique(test_labels)
 
         if unique_labels.size > 1:
-            gt = test_labels.astype(int)
+        gt = test_labels.astype(int)
 
-            print("pred:   ", pred.shape)
-            print("gt:     ", gt.shape)
+        print("pred:   ", pred.shape)
+        print("gt:     ", gt.shape)
 
             # detection adjustment
             gt, pred_adj = adjustment(gt, pred)
 
             pred_adj = np.array(pred_adj)
-            gt = np.array(gt)
+        gt = np.array(gt)
             print("pred (adjusted): ", pred_adj.shape)
             print("gt (adjusted):   ", gt.shape)
 
             accuracy = accuracy_score(gt, pred_adj)
             precision, recall, f_score, support = precision_recall_fscore_support(gt, pred_adj, average='binary')
-            print("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
-                accuracy, precision,
-                recall, f_score))
+        print("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
+            accuracy, precision,
+            recall, f_score))
 
             with open("result_anomaly_detection.txt", 'a') as f:
-                f.write(setting + "  \n")
-                f.write("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
-                    accuracy, precision,
-                    recall, f_score))
-                f.write('\n')
-                f.write('\n')
+        f.write(setting + "  \n")
+        f.write("Accuracy : {:0.4f}, Precision : {:0.4f}, Recall : {:0.4f}, F-score : {:0.4f} ".format(
+            accuracy, precision,
+            recall, f_score))
+        f.write('\n')
+        f.write('\n')
         else:
             print("Test labels are constant (no ground truth). Skipping metric computation; "
                   "saved energy and predictions for further analysis.")
