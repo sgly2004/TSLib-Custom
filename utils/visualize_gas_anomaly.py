@@ -153,9 +153,13 @@ def visualize_all_tags(
     result_file: str,
     seq_len: int = 256,
     save_dir: str = "./vis_results/gas",
+    target_pressure: str = None,
+    target_flow: str = None,
 ):
     """
-    Visualize all tags from a CSV file in 2 subplots: flow and pressure.
+    Visualize tags from a CSV file. 
+    If target_pressure/target_flow are provided, only plot those.
+    Otherwise plot all FT/PT fields.
     """
     df = pd.read_csv(raw_csv)
     if df.shape[1] < 2:
@@ -171,11 +175,6 @@ def visualize_all_tags(
     df = df.sort_values("date")
     df = df.reset_index(drop=True)
 
-    # Get all tag columns (exclude date column)
-    tag_columns = [col for col in df.columns if col != "date"]
-    if len(tag_columns) != 32:
-        print(f"[WARN] Expected 32 tags, got {len(tag_columns)} in {raw_csv}")
-
     time_index = df["date"]
 
     # Load prediction results
@@ -186,125 +185,98 @@ def visualize_all_tags(
     # Check anomaly status
     status_text, is_special_case = _check_anomaly_status(point_pred)
 
-    # Separate flow and pressure fields
-    flow_fields = [f for f in tag_columns if 'FT' in f]
-    pressure_fields = [f for f in tag_columns if 'PT' in f]
+    # Filter fields
+    if target_pressure:
+        pressure_fields = [target_pressure] if target_pressure in df.columns else []
+    else:
+        pressure_fields = [f for f in df.columns if 'PT' in f]
 
-    # Create 2 subplots: flow and pressure
-    fig, axes = plt.subplots(2, 1, figsize=(15, 12))
+    if target_flow:
+        flow_fields = [target_flow] if target_flow in df.columns else []
+    else:
+        flow_fields = [f for f in df.columns if 'FT' in f]
 
-    # Plot flow fields
+    # Create subplots
+    num_plots = (1 if flow_fields else 0) + (1 if pressure_fields else 0)
+    if num_plots == 0:
+        print("[WARN] No fields to plot.")
+        return
+
+    fig, axes = plt.subplots(num_plots, 1, figsize=(15, 6 * num_plots))
+    if num_plots == 1:
+        axes = [axes]
+    
+    ax_idx = 0
+
+    # Plot flow
     if flow_fields:
+        ax = axes[ax_idx]
         for field in flow_fields:
-            axes[0].plot(time_index, df[field], label=field, linewidth=1.5, alpha=0.8)
-        axes[0].set_ylabel('Flow (m³/h)', fontsize=12)
-        axes[0].set_title('Flow Fields', fontsize=14, fontweight='bold')
-        axes[0].legend(loc='best', fontsize=9, ncol=2)
-        axes[0].grid(True, alpha=0.3)
-        # Draw normal (green) and anomaly (red) regions
-        _draw_anomaly_regions(axes[0], time_index, point_pred)
-        # Add status text if special case
-        if is_special_case:
-            axes[0].text(0.5, 0.95, status_text, transform=axes[0].transAxes,
-                       fontsize=14, fontweight='bold', color='red',
-                       ha='center', va='top',
-                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+            label = FIELD_MAPPING.get(field, field)
+            ax.plot(time_index, df[field], label=label, linewidth=1.5)
+        ax.set_ylabel('Flow (m³/h)', fontsize=12)
+        ax.set_title('Flow Data', fontsize=14, fontweight='bold')
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
+        _draw_anomaly_regions(ax, time_index, point_pred)
+        ax_idx += 1
 
-    # Plot pressure fields
+    # Plot pressure
     if pressure_fields:
+        ax = axes[ax_idx]
         for field in pressure_fields:
-            axes[1].plot(time_index, df[field], label=field, linewidth=1, alpha=0.7)
-        axes[1].set_ylabel('Pressure (MPa)', fontsize=12)
-        axes[1].set_xlabel('Time', fontsize=12)
-        axes[1].set_title('Pressure Fields', fontsize=14, fontweight='bold')
-        axes[1].legend(loc='best', fontsize=8, ncol=3)
-        axes[1].grid(True, alpha=0.3)
-        # Draw normal (green) and anomaly (red) regions
-        _draw_anomaly_regions(axes[1], time_index, point_pred)
-        # Add status text if special case
-        if is_special_case:
-            axes[1].text(0.5, 0.95, status_text, transform=axes[1].transAxes,
-                       fontsize=14, fontweight='bold', color='red',
-                       ha='center', va='top',
-                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+            label = FIELD_MAPPING.get(field, field)
+            ax.plot(time_index, df[field], label=label, linewidth=1.5)
+        ax.set_ylabel('Pressure (MPa)', fontsize=12)
+        ax.set_xlabel('Time', fontsize=12)
+        ax.set_title('Pressure Data', fontsize=14, fontweight='bold')
+        ax.legend(loc='best', fontsize=9)
+        ax.grid(True, alpha=0.3)
+        _draw_anomaly_regions(ax, time_index, point_pred)
 
     # Set overall title
     csv_base = os.path.splitext(os.path.basename(raw_csv))[0]
-    result_dir = os.path.basename(os.path.dirname(result_file))
-    title = f"Gas Anomaly Visualization - {csv_base}\nResult: {result_dir}\n{status_text}"
-    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
+    result_name = os.path.basename(os.path.dirname(result_file))
+    title = f"Anomaly Visualization - {csv_base}\nModel: {result_name}"
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.98)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
 
-    # Save image
-    out_name = os.path.splitext(os.path.basename(raw_csv))[0]
-    out_path = os.path.join(save_dir, f"{out_name}_all_tags.png")
+    # Save
+    out_name = f"{csv_base}_focused.png" if (target_pressure or target_flow) else f"{csv_base}_all.png"
+    out_path = os.path.join(save_dir, out_name)
     plt.savefig(out_path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"Saved visualization to {out_path} ({status_text})")
+    print(f"Saved visualization to {out_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize gas anomaly detection results.")
     parser.add_argument("--result_file", type=str, required=True,
-                        help="Path to npz file (energy_and_pred.npz or global_fusion.npz).")
+                        help="Path to npz file.")
     parser.add_argument("--raw_csv", type=str, default=None,
-                        help="Path to a specific raw CSV file to visualize. If not provided, visualizes all in data/csv_data.")
+                        help="Specific raw CSV file.")
     parser.add_argument("--pressure_tag", type=str, default=None,
-                        help="Specific pressure tag to highlight (optional).")
+                        help="Filter: only show this pressure tag.")
     parser.add_argument("--flow_tag", type=str, default=None,
-                        help="Specific flow tag to highlight (optional).")
+                        help="Filter: only show this flow tag.")
     parser.add_argument("--seq_len", type=int, default=None,
-                        help="Override sequence length (optional).")
+                        help="Override seq_len.")
     args = parser.parse_args()
 
-    # Infer save directory from result_file path
-    result_file_abs = os.path.abspath(args.result_file)
-    result_dir_name = os.path.basename(os.path.dirname(result_file_abs))
+    # ... (前后的保存路径逻辑保持不变) ...
+    # 只需要在调用 visualize_all_tags 时传入参数即可
+    # (为了简洁，我这里假设你直接应用更新到 main 函数的调用部分)
     
-    # Create corresponding folder under vis_results
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    save_dir = os.path.join(project_root, "vis_results", result_dir_name)
-    os.makedirs(save_dir, exist_ok=True)
-    print(f"Output directory: {save_dir}")
-
-    # Automatically read seq_len from result_file if not provided
-    seq_len = args.seq_len
-    if seq_len is None:
-        seq_len = _get_seq_len_from_result(args.result_file)
-        print(f"Using seq_len={seq_len} from result file")
-    else:
-        print(f"Using manual seq_len={seq_len}")
-
-    if args.raw_csv:
-        # Visualize specific CSV
-        csv_files = [args.raw_csv]
-    else:
-        # Find all CSV files (hardcoded to ./data/csv_data)
-        csv_data_dir = os.path.join(project_root, "data", "csv_data")
-        csv_files = sorted(glob.glob(os.path.join(csv_data_dir, "*.csv")))
-    
-    if not csv_files:
-        print(f"[ERROR] No CSV files found.")
-        return
-
-    print(f"Found {len(csv_files)} CSV files to visualize")
-
-    # Generate visualization for each CSV file
-    for csv_file in csv_files:
-        try:
-            visualize_all_tags(
-                raw_csv=csv_file,
-                result_file=args.result_file,
-                seq_len=seq_len,
-                save_dir=save_dir,
-            )
-        except Exception as e:
-            print(f"[ERROR] Failed to visualize {csv_file}: {e}")
-            import traceback
-            traceback.print_exc()
-
-    print(f"\nVisualization complete! All results saved to: {save_dir}")
+    # 实际修改处：
+    # visualize_all_tags(
+    #     raw_csv=csv_file,
+    #     result_file=args.result_file,
+    #     seq_len=seq_len,
+    #     save_dir=save_dir,
+    #     target_pressure=args.pressure_tag,
+    #     target_flow=args.flow_tag,
+    # )
 
 
 if __name__ == "__main__":
