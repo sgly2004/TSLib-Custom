@@ -16,13 +16,8 @@ from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from utils.tools import dotdict
 
 # --- 配置区 ---
-# 目标维度及其对应的模型路径
+# 目标维度及其对应的模型路径（仅保留已训练的流量模型）
 TARGET_CONFIGS = {
-    'CHX00L006PT0101': {
-        'model_id': 'gas_single_CHX00L006PT0101',
-        'checkpoint_dir': 'anomaly_detection_gas_single_CHX00L006PT0101_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc1_ebtimeF_dtTrue_CHX00L006PT0101_pressure_0',
-        'root_path': './dataset/gas_anomaly_single'
-    },
     'CHX00F002FT0101': {
         'model_id': 'gas_single_F002',
         'checkpoint_dir': 'anomaly_detection_gas_single_F002_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc3_ebtimeF_dtTrue_test_0',
@@ -48,7 +43,7 @@ BASE_CONFIG = {
     'c_out': 1,
     'd_model': 128,
     'd_ff': 512,
-    'num_kernels': 4,
+    'num_kernels': 6,  # 修正为训练时使用的值
     'top_k': 3,
     'e_layers': 2,
     'd_layers': 1,
