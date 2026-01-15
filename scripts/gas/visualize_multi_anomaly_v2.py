@@ -54,22 +54,25 @@ def plot_multi_diagnosis(file_name, percentile=DEFAULT_PERCENTILE):
         print(f"  ⚠️ 读取CSV失败: {e}")
         return
 
-    # 2. 准备绘图 (3个子图)
-    fig, axes = plt.subplots(3, 1, figsize=(20, 18), sharex=True)
+    # 2. 准备绘图 (4个子图: 流量背景、压力背景、目标流量、能量)
+    fig, axes = plt.subplots(4, 1, figsize=(20, 24), sharex=True)
     
-    # --- 子图 1: 32维背景图 ---
+    # 分离流量和压力字段
     all_cols = [c for c in df.columns if c not in ['date'] and ('FT' in c or 'PT' in c)]
-    print(f"    找到 {len(all_cols)} 个维度用于背景绘制")
+    flow_cols = [c for c in all_cols if 'FT' in c]
+    pressure_cols = [c for c in all_cols if 'PT' in c]
+    print(f"    找到 {len(flow_cols)} 个流量维度, {len(pressure_cols)} 个压力维度")
     
-    # 绘制背景线（非目标维度）- 提高可见度
-    background_count = 0
-    for col in all_cols:
+    # --- 子图 0: 流量维度全景 (完全可见) ---
+    for col in flow_cols:
         if col not in TAGS:
-            axes[0].plot(df['date'], df[col], color='gray', alpha=0.4, linewidth=0.8)
-            background_count += 1
-    print(f"    绘制了 {background_count} 条背景线")
+            axes[0].plot(df['date'], df[col], color='gray', alpha=1.0, linewidth=0.8)
     
-    # --- 循环处理 2 个关键维度 ---
+    # --- 子图 1: 压力维度全景 (完全可见) ---
+    for col in pressure_cols:
+        axes[1].plot(df['date'], df[col], color='gray', alpha=1.0, linewidth=0.8)
+    
+    # --- 循环处理 2 个关键流量维度 ---
     for tag, (color, name) in TAGS.items():
         if tag not in df.columns: continue
         
@@ -77,8 +80,8 @@ def plot_multi_diagnosis(file_name, percentile=DEFAULT_PERCENTILE):
         result_path = os.path.join(RESULT_DIR, f"{file_name}_{tag}_result.npz")
         if not os.path.exists(result_path):
             print(f"  ⚠️ 缺少 {tag} 的结果，仅绘制原始曲线")
-            axes[0].plot(df['date'], df[tag], color=color, alpha=0.8, linewidth=1.5, label=name)
-            axes[1].plot(df['date'], df[tag], color=color, alpha=0.9, linewidth=1.5, label=name)
+            axes[0].plot(df['date'], df[tag], color=color, alpha=1.0, linewidth=2.0, label=name)
+            axes[2].plot(df['date'], df[tag], color=color, alpha=1.0, linewidth=2.0, label=name)
             continue
             
         res = np.load(result_path)
@@ -87,40 +90,46 @@ def plot_multi_diagnosis(file_name, percentile=DEFAULT_PERCENTILE):
         preds = (point_energy > threshold).astype(int)
         print(f"    {tag}: 阈值百分位={percentile}%, threshold={threshold:.4f}")
 
-        # 绘制子图 1 中的高亮线
-        axes[0].plot(df['date'], df[tag], color=color, alpha=0.8, linewidth=1.8, label=name)
+        # 绘制子图 0 中的高亮流量线
+        axes[0].plot(df['date'], df[tag], color=color, alpha=1.0, linewidth=2.0, label=name)
         
         # 绘制子图 2 (关键维度对比)
-        axes[1].plot(df['date'], df[tag], color=color, alpha=0.9, linewidth=1.8, label=f"{name}")
+        axes[2].plot(df['date'], df[tag], color=color, alpha=1.0, linewidth=2.0, label=f"{name}")
         
         # 绘制子图 3 (能量对比)
-        axes[2].plot(df['date'], point_energy, color=color, alpha=0.7, linewidth=1, label=f"{name} Energy")
-        axes[2].axhline(y=threshold, color=color, linestyle='--', alpha=0.5, linewidth=1)
+        axes[3].plot(df['date'], point_energy, color=color, alpha=0.9, linewidth=1.5, label=f"{name} Energy")
+        axes[3].axhline(y=threshold, color=color, linestyle='--', alpha=0.6, linewidth=1.5)
 
-        # 标注异常区域 (不同维度的异常用不同颜色的背景)
+        # 标注异常区域 (在所有相关子图中)
         diff = np.diff(np.concatenate([[0], preds, [0]]))
         starts = np.where(diff == 1)[0]
         ends = np.where(diff == -1)[0]
         for s, e in zip(starts, ends):
-            # 在子图 2 和 3 标注背景
-            for ax_idx in [1, 2]:
+            # 在子图 0, 2, 3 标注背景
+            for ax_idx in [0, 2, 3]:
                 axes[ax_idx].axvspan(df['date'].iloc[s], df['date'].iloc[min(e, total_len-1)],
                                    alpha=0.15, color=color, label='_nolegend_')
 
     # 图表装饰
-    axes[0].set_title(f'Full Context (32 Dims) - {file_name}', fontsize=14)
+    axes[0].set_title(f'Flow Dimensions Context (All {len(flow_cols)} Flow Channels) - {file_name}', fontsize=14)
+    axes[0].set_ylabel('Flow Rate (m³/h)', fontsize=12)
     axes[0].legend(loc='upper right')
+    axes[0].grid(True, alpha=0.3)
     
-    axes[1].set_title('Target Flow Dimensions & Synchronized Anomalies', fontsize=14)
-    axes[1].set_ylabel('Flow Rate (m³/h)')
-    axes[1].legend(loc='upper right')
+    axes[1].set_title(f'Pressure Dimensions Context (All {len(pressure_cols)} Pressure Channels)', fontsize=14)
+    axes[1].set_ylabel('Pressure (MPa)', fontsize=12)
+    axes[1].grid(True, alpha=0.3)
     
-    axes[2].set_title('Reconstruction Energy & Thresholds (Log Scale)', fontsize=14)
-    axes[2].set_yscale('log')
-    axes[2].set_ylabel('Energy')
+    axes[2].set_title('Target Flow Dimensions & Synchronized Anomalies', fontsize=14)
+    axes[2].set_ylabel('Flow Rate (m³/h)', fontsize=12)
     axes[2].legend(loc='upper right')
-
-    for ax in axes: ax.grid(True, alpha=0.2)
+    axes[2].grid(True, alpha=0.3)
+    
+    axes[3].set_title('Reconstruction Energy & Thresholds (Log Scale)', fontsize=14)
+    axes[3].set_yscale('log')
+    axes[3].set_ylabel('Energy', fontsize=12)
+    axes[3].legend(loc='upper right')
+    axes[3].grid(True, alpha=0.3)
     
     plt.tight_layout()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
