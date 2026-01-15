@@ -81,10 +81,6 @@ def visualize_single_file(result_file, raw_csv, target_col='CHX00L006PT0101',
     
     # 子图2：压力 + 异常标记
     axes[1].plot(df_clean['date'], df_clean[target_col], color='blue', linewidth=1.5, label=target_col)
-    if anomaly_count > 0:
-        anomaly_mask = (point_pred == 1)
-        axes[1].scatter(df_clean['date'][anomaly_mask], df_clean[target_col][anomaly_mask],
-                       color='red', s=20, alpha=0.7, label=f'Anomaly ({anomaly_count})', zorder=5)
     axes[1].set_ylabel('Pressure')
     axes[1].legend(loc='upper right')
     axes[1].set_title(f'Pressure Detection - {target_col}')

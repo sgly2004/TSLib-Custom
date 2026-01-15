@@ -502,9 +502,6 @@ class GasSegLoader(Dataset):
         train_data = train_df.values[:, 1:]
         test_data = test_df.values[:, 1:]
 
-        train_data = np.nan_to_num(train_data)
-        test_data = np.nan_to_num(test_data)
-
         # 仅在训练集上拟合 scaler
         self.scaler.fit(train_data)
         train_data = self.scaler.transform(train_data)
