@@ -136,7 +136,21 @@ def main():
         return
     
     print(f"找到 {len(result_files)} 个检测结果文件")
-    unique_files = sorted(list(set([os.path.basename(f).split('_CHX')[0] for f in result_files])))
+    
+    # 智能提取文件基础名：尝试从 "1001_CHX00F002FT0101_result.npz" 提取 "1001"
+    # 如果没有 _CHX，则从 "1001_result.npz" 提取 "1001"
+    unique_files = set()
+    for f in result_files:
+        basename = os.path.basename(f)
+        if '_CHX' in basename:
+            # 新格式: 1001_CHX00F002FT0101_result.npz
+            file_id = basename.split('_CHX')[0]
+        else:
+            # 旧格式: 1001_result.npz
+            file_id = basename.replace('_result.npz', '')
+        unique_files.add(file_id)
+    
+    unique_files = sorted(list(unique_files))
     print(f"对应 {len(unique_files)} 个唯一文件，开始生成深度诊断图...\n")
     
     success_count = 0

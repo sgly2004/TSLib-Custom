@@ -60,8 +60,8 @@ BASE_CONFIG = {
     'activation': 'gelu',
     'd_conv': 4,
     'output_attention': False,
-    'checkpoints': './test_results',  # 改为 test_results
-    'use_gpu': False,  # 本地通常用 CPU
+    'checkpoints': './checkpoints',  # 模型文件在 checkpoints 目录
+    'use_gpu': True,  # 服务器通常有 GPU
     'gpu': 0,
     'use_multi_gpu': False,
     'devices': '0',
