@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -18,6 +19,9 @@ TAGS = {
     'CHX00F003FT0101': ['blue', 'Wushen Flow']
 }
 
+# 默认阈值百分位数（可通过命令行参数修改）
+DEFAULT_PERCENTILE = 99.5
+
 def reconstruct_point_energy(test_energy_windows, total_len, seq_len=256, step=8):
     """将窗口能量重构为点能量"""
     n_win = test_energy_windows.shape[0]
@@ -32,7 +36,7 @@ def reconstruct_point_energy(test_energy_windows, total_len, seq_len=256, step=8
             count[start:actual_end] += 1
     return point_energy / np.maximum(count, 1)
 
-def plot_multi_diagnosis(file_name):
+def plot_multi_diagnosis(file_name, percentile=DEFAULT_PERCENTILE):
     print(f"  开始处理文件: {file_name}")
     csv_path = os.path.join(DATA_DIR, f"{file_name}.csv")
     if not os.path.exists(csv_path):
@@ -57,15 +61,15 @@ def plot_multi_diagnosis(file_name):
     all_cols = [c for c in df.columns if c not in ['date'] and ('FT' in c or 'PT' in c)]
     print(f"    找到 {len(all_cols)} 个维度用于背景绘制")
     
-    # 绘制背景线（非目标维度）
+    # 绘制背景线（非目标维度）- 提高可见度
     background_count = 0
     for col in all_cols:
         if col not in TAGS:
-            axes[0].plot(df['date'], df[col], color='gray', alpha=0.15, linewidth=0.6)
+            axes[0].plot(df['date'], df[col], color='gray', alpha=0.4, linewidth=0.8)
             background_count += 1
     print(f"    绘制了 {background_count} 条背景线")
     
-    # --- 循环处理 3 个关键维度 ---
+    # --- 循环处理 2 个关键维度 ---
     for tag, (color, name) in TAGS.items():
         if tag not in df.columns: continue
         
@@ -79,8 +83,9 @@ def plot_multi_diagnosis(file_name):
             
         res = np.load(result_path)
         point_energy = reconstruct_point_energy(res['test_energy'], total_len)
-        threshold = np.percentile(point_energy, 99.5) # 动态阈值建议
+        threshold = np.percentile(point_energy, percentile)  # 使用参数化的阈值百分位数
         preds = (point_energy > threshold).astype(int)
+        print(f"    {tag}: 阈值百分位={percentile}%, threshold={threshold:.4f}")
 
         # 绘制子图 1 中的高亮线
         axes[0].plot(df['date'], df[tag], color=color, alpha=0.8, linewidth=1.8, label=name)
@@ -130,8 +135,15 @@ def plot_multi_diagnosis(file_name):
         plt.close()
 
 def main():
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='多维度异常诊断可视化')
+    parser.add_argument('--percentile', type=float, default=DEFAULT_PERCENTILE,
+                        help=f'能量阈值百分位数 (默认: {DEFAULT_PERCENTILE})')
+    args = parser.parse_args()
+    
     print("="*60)
     print("多维度异常诊断可视化")
+    print(f"阈值百分位数: {args.percentile}%")
     print("="*60)
     
     # 自动获取已检测的文件列表
@@ -161,7 +173,7 @@ def main():
     success_count = 0
     for f_name in unique_files: 
         try:
-            plot_multi_diagnosis(f_name)
+            plot_multi_diagnosis(f_name, percentile=args.percentile)
             success_count += 1
         except Exception as e:
             print(f"  ❌ 处理 {f_name} 时出错: {e}")
