@@ -3,6 +3,8 @@ import sys
 import glob
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')  # 必须在 import pyplot 之前设置，用于无图形界面环境
 import matplotlib.pyplot as plt
 
 # 配置
@@ -32,14 +34,22 @@ def reconstruct_point_energy(test_energy_windows, total_len, seq_len=256, step=8
     return point_energy / np.maximum(count, 1)
 
 def plot_multi_diagnosis(file_name):
+    print(f"  开始处理文件: {file_name}")
     csv_path = os.path.join(DATA_DIR, f"{file_name}.csv")
-    if not os.path.exists(csv_path): return
+    if not os.path.exists(csv_path):
+        print(f"  ⚠️ 跳过：找不到CSV文件 {csv_path}")
+        return
 
     # 1. 加载原始数据
-    df = pd.read_csv(csv_path)
-    if 'date' not in df.columns: df.columns = ['date'] + list(df.columns)[1:]
-    df['date'] = pd.to_datetime(df['date'])
-    total_len = len(df)
+    try:
+        df = pd.read_csv(csv_path)
+        if 'date' not in df.columns: df.columns = ['date'] + list(df.columns)[1:]
+        df['date'] = pd.to_datetime(df['date'])
+        total_len = len(df)
+        print(f"    数据行数: {total_len}")
+    except Exception as e:
+        print(f"  ⚠️ 读取CSV失败: {e}")
+        return
 
     # 2. 准备绘图 (3个子图)
     fig, axes = plt.subplots(3, 1, figsize=(20, 18), sharex=True)
@@ -105,22 +115,42 @@ def plot_multi_diagnosis(file_name):
     plt.tight_layout()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     save_path = os.path.join(OUTPUT_DIR, f"{file_name}_full_diagnosis.png")
-    plt.savefig(save_path, dpi=120)
-    plt.close()
-    print(f"  ✓ 诊断图已保存: {save_path}")
+    
+    try:
+        plt.savefig(save_path, dpi=120)
+        plt.close()
+        print(f"  ✓ 诊断图已保存: {save_path}")
+    except Exception as e:
+        print(f"  ⚠️ 保存图片失败: {e}")
+        plt.close()
 
 def main():
+    print("="*60)
+    print("多维度异常诊断可视化")
+    print("="*60)
+    
     # 自动获取已检测的文件列表
     result_files = glob.glob(os.path.join(RESULT_DIR, "*_result.npz"))
     if not result_files:
         print(f"❌ 错误: 在 {RESULT_DIR} 未找到结果文件。请先运行检测脚本。")
         return
-        
-    unique_files = sorted(list(set([os.path.basename(f).split('_CHX')[0] for f in result_files])))
-    print(f"找到 {len(unique_files)} 个文件的检测结果，开始生成深度诊断图...")
     
-    for f_name in unique_files[:10]: # 默认处理前10个
-        plot_multi_diagnosis(f_name)
+    print(f"找到 {len(result_files)} 个检测结果文件")
+    unique_files = sorted(list(set([os.path.basename(f).split('_CHX')[0] for f in result_files])))
+    print(f"对应 {len(unique_files)} 个唯一文件，开始生成深度诊断图...\n")
+    
+    success_count = 0
+    for f_name in unique_files: 
+        try:
+            plot_multi_diagnosis(f_name)
+            success_count += 1
+        except Exception as e:
+            print(f"  ❌ 处理 {f_name} 时出错: {e}")
+    
+    print(f"\n{'='*60}")
+    print(f"✅ 完成！成功生成 {success_count}/{len(unique_files)} 个诊断图")
+    print(f"图片保存位置: {OUTPUT_DIR}")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     main()
