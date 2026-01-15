@@ -16,7 +16,7 @@ from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from utils.tools import dotdict
 
 # --- 配置区 ---
-# 目标维度及其对应的模型路径（请确保训练完后导回的模型文件夹名称与此对应）
+# 目标维度及其对应的模型路径
 TARGET_CONFIGS = {
     'CHX00L006PT0101': {
         'model_id': 'gas_single_CHX00L006PT0101',
@@ -25,17 +25,17 @@ TARGET_CONFIGS = {
     },
     'CHX00F002FT0101': {
         'model_id': 'gas_single_F002',
-        'checkpoint_dir': 'anomaly_detection_gas_single_F002_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc1_ebtimeF_dtTrue_CHX00F002FT0101_0',
+        'checkpoint_dir': 'anomaly_detection_gas_single_F002_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc3_ebtimeF_dtTrue_test_0',
         'root_path': './dataset/gas_multi_dim/CHX00F002FT0101'
     },
     'CHX00F003FT0101': {
         'model_id': 'gas_single_F003',
-        'checkpoint_dir': 'anomaly_detection_gas_single_F003_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc1_ebtimeF_dtTrue_CHX00F003FT0101_0',
+        'checkpoint_dir': 'anomaly_detection_gas_single_F003_TimesNet_GAS_ftS_sl256_ll48_pl0_dm128_nh8_el2_dl1_df512_expand2_dc4_fc3_ebtimeF_dtTrue_test_0',
         'root_path': './dataset/gas_multi_dim/CHX00F003FT0101'
     }
 }
 
-# 公共模型参数（需与训练时保持一致）
+# 公共模型参数
 BASE_CONFIG = {
     'task_name': 'anomaly_detection',
     'model': 'TimesNet',
@@ -60,8 +60,8 @@ BASE_CONFIG = {
     'activation': 'gelu',
     'd_conv': 4,
     'output_attention': False,
-    'checkpoints': './checkpoints/gas_single_dimension',
-    'use_gpu': True,
+    'checkpoints': './test_results',  # 改为 test_results
+    'use_gpu': False,  # 本地通常用 CPU
     'gpu': 0,
     'use_multi_gpu': False,
     'devices': '0',
