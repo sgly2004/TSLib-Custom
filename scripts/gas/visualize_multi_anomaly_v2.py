@@ -12,9 +12,8 @@ DATA_DIR = 'data/csv_data'
 RESULT_DIR = 'test_results/individual_file_results'
 OUTPUT_DIR = 'vis_results/multi_dim_v2'
 
-# 标签配置 (维度: [颜色, 中文名])
+# 标签配置 (维度: [颜色, 中文名]) - 仅包含已训练的流量模型
 TAGS = {
-    'CHX00L006FT0101': ['red', 'Hohhot Flow'],
     'CHX00F002FT0101': ['green', 'Etoke Flow'],
     'CHX00F003FT0101': ['blue', 'Wushen Flow']
 }
@@ -55,10 +54,16 @@ def plot_multi_diagnosis(file_name):
     fig, axes = plt.subplots(3, 1, figsize=(20, 18), sharex=True)
     
     # --- 子图 1: 32维背景图 ---
-    all_cols = [c for c in df.columns if 'FT' in c or 'PT' in c]
+    all_cols = [c for c in df.columns if c not in ['date'] and ('FT' in c or 'PT' in c)]
+    print(f"    找到 {len(all_cols)} 个维度用于背景绘制")
+    
+    # 绘制背景线（非目标维度）
+    background_count = 0
     for col in all_cols:
         if col not in TAGS:
-            axes[0].plot(df['date'], df[col], color='gray', alpha=0.1, linewidth=0.5)
+            axes[0].plot(df['date'], df[col], color='gray', alpha=0.15, linewidth=0.6)
+            background_count += 1
+    print(f"    绘制了 {background_count} 条背景线")
     
     # --- 循环处理 3 个关键维度 ---
     for tag, (color, name) in TAGS.items():
