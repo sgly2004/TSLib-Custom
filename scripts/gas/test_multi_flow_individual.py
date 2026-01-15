@@ -56,14 +56,14 @@ BASE_CONFIG = {
     'd_conv': 4,
     'output_attention': False,
     'checkpoints': './checkpoints',  # 模型文件在 checkpoints 目录
-    'use_gpu': True,  # 服务器通常有 GPU
+    'use_gpu': True,  # 使用 GPU 加速
     'gpu': 0,
     'use_multi_gpu': False,
-    'devices': '0',
-    'num_workers': 0,
-    'pin_memory': False,
+    'devices': '0,1,2,3',
+    'num_workers': 4,  # 增加数据加载线程
+    'pin_memory': True,  # GPU 加速
     'drop_last': False,
-    'batch_size': 128
+    'batch_size': 256  # 增大 batch size 加速推理
 }
 
 def load_exp_for_tag(tag):
